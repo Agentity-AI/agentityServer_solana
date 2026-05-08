@@ -1,7 +1,6 @@
 const express = require("express");
 const router = express.Router();
 
-const sequelize = require("../config/database");
 const { buildSolanaRuntimeStatus } = require("../services/solana/client");
 
 /**
@@ -45,18 +44,17 @@ const { buildSolanaRuntimeStatus } = require("../services/solana/client");
  *                   example: "devnet"
  */
 router.get("/status", async (req, res) => {
-  let database = "disconnected";
-
-  try {
-    await sequelize.authenticate();
-    database = "connected";
-  } catch {
-    database = "disconnected";
-  }
+  const databaseStatus = req.app.locals.databaseStatus || {
+    status: "unknown",
+    checkedAt: null,
+    syncStatus: "unknown",
+  };
 
   return res.json({
     api: "healthy",
-    database,
+    database: databaseStatus.status,
+    databaseCheckedAt: databaseStatus.checkedAt,
+    databaseSyncStatus: databaseStatus.syncStatus,
     solana: buildSolanaRuntimeStatus(),
     cre: process.env.CRE_WEBHOOK_URL ? "configured" : "disabled",
     network: process.env.SOLANA_CLUSTER || "devnet",

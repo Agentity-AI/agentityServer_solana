@@ -24,21 +24,32 @@ function redactValue(value) {
   }
 
   if (value && typeof value === "object") {
-    return Object.fromEntries(
-      Object.entries(value).map(([key, innerValue]) => {
-        if (SENSITIVE_KEYS.has(key)) {
-          return [key, "[REDACTED]"];
-        }
+    for (const [key, innerValue] of Object.entries(value)) {
+      value[key] = SENSITIVE_KEYS.has(key) ? "[REDACTED]" : redactValue(innerValue);
+    }
 
-        return [key, redactValue(innerValue)];
-      }),
-    );
+    return value;
   }
 
   return value;
 }
 
-const redactSecrets = winston.format((info) => redactValue(info))();
+const redactSecrets = winston.format((info) => {
+  redactValue(info);
+  return info;
+})();
+
+const developmentFormat = winston.format.printf((info) => {
+  const { level, message, timestamp, service, env, ...meta } = info;
+  const details = Object.keys(meta).length ? ` ${JSON.stringify(meta)}` : "";
+
+  return `${level}: ${message}${details}`;
+});
+
+const productionFormat = winston.format.combine(
+  winston.format.timestamp(),
+  winston.format.json(),
+);
 
 const logger = winston.createLogger({
   level: process.env.LOG_LEVEL || "info",
@@ -49,8 +60,7 @@ const logger = winston.createLogger({
   format: winston.format.combine(
     winston.format.errors({ stack: true }),
     redactSecrets,
-    winston.format.timestamp(),
-    winston.format.json(),
+    process.env.NODE_ENV === "production" ? productionFormat : developmentFormat,
   ),
   transports: [new winston.transports.Console()],
 });

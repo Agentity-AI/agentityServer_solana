@@ -1,5 +1,4 @@
 const crypto = require("crypto");
-const UserApiKey = require("../../models/userApiKey");
 
 const DEFAULT_SETTINGS = {
   profile: {
@@ -66,6 +65,8 @@ function buildSettingsResponse(user, options = {}) {
 }
 
 async function getActiveApiKeyForUser(userId) {
+  const UserApiKey = require("../../models/userApiKey");
+
   return UserApiKey.findOne({
     where: {
       user_id: userId,

@@ -37,11 +37,20 @@ Required:
 
 ```bash
 DATABASE_URL=postgresql://USER:PASSWORD@HOST:5432/postgres
+DB_SYNC_ON_START=false
 SUPABASE_URL=https://YOUR_PROJECT.supabase.co
 SUPABASE_ANON_KEY=YOUR_SUPABASE_ANON_KEY
 SUPABASE_SERVICE_ROLE_KEY=YOUR_SUPABASE_SERVICE_ROLE_KEY
 PUBLIC_API_BASE_URL=http://localhost:5000
 ```
+
+By default the API starts without running `sequelize.sync()`. Apply the schema separately with:
+
+```bash
+npm run db:schema:apply
+```
+
+For local development only, set `DB_SYNC_ON_START=true` if you want Sequelize to sync models during startup.
 
 Solana:
 

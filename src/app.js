@@ -3,34 +3,39 @@ const cors = require("cors");
 const cookieParser = require("cookie-parser");
 
 const logger = require("./config/logger");
-const sequelize = require("./config/database");
-const { optionalAuth } = require("./middleware/auth");
-
-const agentRoutes = require("./routes/agents");
-const simulationRoutes = require("./routes/simulation");
-const executionRoutes = require("./routes/execution");
-const dashboardRoutes = require("./routes/dashboard");
-const authRoutes = require("./routes/auth");
-const docsRoutes = require("./routes/docs");
-const auditsRoutes = require("./routes/audits");
-const walletRoutes = require("./routes/wallets");
-const taskRoutes = require("./routes/tasks");
-const paymentRoutes = require("./routes/payments");
-const workflowRoutes = require("./routes/workflow");
-const alertRoutes = require("./routes/alerts");
-const transactionRoutes = require("./routes/transactions");
-const systemRoutes = require("./routes/system");
-const settingsRoutes = require("./routes/settings");
-const integrationRoutes = require("./routes/integrations");
-const solanaRoutes = require("./routes/solana");
 
 const app = express();
+
+app.locals.databaseStatus = {
+  status: "not_started",
+  checkedAt: null,
+  error: null,
+  syncOnStart: false,
+  syncStatus: "skipped",
+};
 
 const allowedOrigins = [
   "http://localhost:3000",
   "http://localhost:5173",
   // "https://your-frontend-domain.com",
 ];
+
+function lazyMiddleware(loadMiddleware) {
+  let middleware;
+
+  return (req, res, next) => {
+    try {
+      middleware ||= loadMiddleware();
+      return middleware(req, res, next);
+    } catch (error) {
+      return next(error);
+    }
+  };
+}
+
+function lazyRoute(loadRoute) {
+  return lazyMiddleware(loadRoute);
+}
 
 app.use(
   cors({
@@ -60,15 +65,30 @@ app.use(
 
 app.use(express.json());
 
-/**
- * Parse cookies into `req.cookies`.
- *
- * Why:
- * - Needed for cookie-based auth/session flows.
- */
 app.use(cookieParser());
 
-app.use(optionalAuth);
+app.get("/health", async (req, res) => {
+  const databaseStatus = req.app.locals.databaseStatus || {
+    status: "unknown",
+    checkedAt: null,
+    error: null,
+  };
+  const databaseReady = databaseStatus.status === "connected";
+
+  return res.status(databaseReady ? 200 : 503).json({
+    status: databaseReady ? "healthy" : "starting",
+    database: databaseStatus.status,
+    databaseCheckedAt: databaseStatus.checkedAt,
+    databaseSyncStatus: databaseStatus.syncStatus,
+    databaseSyncOnStart: databaseStatus.syncOnStart,
+    databaseError: databaseStatus.error,
+    uptime: process.uptime(),
+  });
+});
+
+app.use(
+  lazyMiddleware(() => require("./middleware/auth").optionalAuth),
+);
 
 app.use((req, res, next) => {
   const start = Date.now();
@@ -90,55 +110,23 @@ app.use((req, res, next) => {
   next();
 });
 
-/**
- * API route registration.
- */
-app.use("/auth", authRoutes);
-app.use("/agents", agentRoutes);
-app.use("/simulation", simulationRoutes);
-app.use("/execute", executionRoutes);
-app.use("/dashboard", dashboardRoutes);
-app.use("/docs", docsRoutes);
-app.use("/audits", auditsRoutes);
-app.use("/wallets", walletRoutes);
-app.use("/tasks", taskRoutes);
-app.use("/payments", paymentRoutes);
-app.use("/workflow", workflowRoutes);
-app.use("/alerts", alertRoutes);
-app.use("/transactions", transactionRoutes);
-app.use("/system", systemRoutes);
-app.use("/settings", settingsRoutes);
-app.use("/integrations", integrationRoutes);
-app.use("/solana", solanaRoutes);
-
-/**
- * Basic health endpoint.
- */
-app.get("/health", async (req, res) => {
-  try {
-    await sequelize.authenticate();
-
-    return res.status(200).json({
-      status: "healthy",
-      database: "connected",
-      uptime: process.uptime(),
-    });
-  } catch (error) {
-    logger.error({
-      message: "Database health check failed",
-      error: {
-        name: error.name,
-        message: error.message,
-        stack: error.stack,
-      },
-    });
-
-    return res.status(500).json({
-      status: "error",
-      database: "disconnected",
-    });
-  }
-});
+app.use("/auth", lazyRoute(() => require("./routes/auth")));
+app.use("/agents", lazyRoute(() => require("./routes/agents")));
+app.use("/simulation", lazyRoute(() => require("./routes/simulation")));
+app.use("/execute", lazyRoute(() => require("./routes/execution")));
+app.use("/dashboard", lazyRoute(() => require("./routes/dashboard")));
+app.use("/docs", lazyRoute(() => require("./routes/docs")));
+app.use("/audits", lazyRoute(() => require("./routes/audits")));
+app.use("/wallets", lazyRoute(() => require("./routes/wallets")));
+app.use("/tasks", lazyRoute(() => require("./routes/tasks")));
+app.use("/payments", lazyRoute(() => require("./routes/payments")));
+app.use("/workflow", lazyRoute(() => require("./routes/workflow")));
+app.use("/alerts", lazyRoute(() => require("./routes/alerts")));
+app.use("/transactions", lazyRoute(() => require("./routes/transactions")));
+app.use("/system", lazyRoute(() => require("./routes/system")));
+app.use("/settings", lazyRoute(() => require("./routes/settings")));
+app.use("/integrations", lazyRoute(() => require("./routes/integrations")));
+app.use("/solana", lazyRoute(() => require("./routes/solana")));
 
 /**
  * 404 handler.

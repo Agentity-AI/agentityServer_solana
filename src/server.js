@@ -1,161 +1,79 @@
-require("dotenv").config();
+require("dotenv").config({ quiet: true });
 
 const app = require("./app");
-const sequelize = require("./config/database");
 const logger = require("./config/logger");
-const { buildSolanaRuntimeStatus } = require("./services/solana/client");
 
-require("./models");
+const PORT = process.env.PORT || 5000;
+const DB_SYNC_ON_START = process.env.DB_SYNC_ON_START === "true";
+let sequelize;
 
-const rawPort = process.env.PORT || "5000";
-const PORT = Number.parseInt(rawPort, 10);
-
-if (Number.isNaN(PORT) || PORT <= 0) {
-  throw new Error(`Invalid PORT: ${rawPort}`);
-}
-
-let server = null;
-let shuttingDown = false;
-
-function serializeError(error) {
-  if (!error) {
-    return null;
+function getDatabase() {
+  if (!sequelize) {
+    sequelize = require("./config/database");
+    require("./models");
   }
 
-  return {
-    name: error.name,
-    message: error.message,
-    stack: error.stack,
-    code: error.code,
-    errno: error.errno,
-    syscall: error.syscall,
-    address: error.address,
-    port: error.port,
-    parent: error.parent
-      ? {
-          name: error.parent.name,
-          message: error.parent.message,
-          code: error.parent.code,
-          errno: error.parent.errno,
-          syscall: error.parent.syscall,
-        }
-      : null,
-    original: error.original
-      ? {
-          name: error.original.name,
-          message: error.original.message,
-          code: error.original.code,
-          errno: error.original.errno,
-          syscall: error.original.syscall,
-        }
-      : null,
+  return sequelize;
+}
+
+function setDatabaseStatus(status, details = {}) {
+  app.locals.databaseStatus = {
+    ...(app.locals.databaseStatus || {}),
+    status,
+    checkedAt: new Date().toISOString(),
+    syncOnStart: DB_SYNC_ON_START,
+    ...details,
   };
 }
 
-async function shutdown(signal) {
-  if (shuttingDown) {
-    return;
-  }
-
-  shuttingDown = true;
-
-  logger.info({
-    message: "Shutdown initiated",
-    signal,
-  });
-
+async function connectDatabase() {
   try {
-    if (server) {
-      await new Promise((resolve, reject) => {
-        server.close((error) => {
-          if (error) {
-            reject(error);
-            return;
-          }
+    const sequelize = getDatabase();
 
-          resolve();
-        });
-      });
-    }
-
-    await sequelize.close();
-
-    logger.info({ message: "Shutdown completed successfully" });
-    process.exit(0);
-  } catch (error) {
-    logger.error({
-      message: "Shutdown failed",
-      error: serializeError(error),
-    });
-    process.exit(1);
-  }
-}
-
-async function startServer() {
-  try {
     await sequelize.authenticate();
     logger.info({ message: "Database connected successfully." });
 
-    await sequelize.sync();
-    logger.info({ message: "Database synced." });
+    if (DB_SYNC_ON_START) {
+      setDatabaseStatus("syncing", { error: null, syncStatus: "running" });
+      await sequelize.sync();
+      logger.info({ message: "Database synced." });
+    }
 
-    logger.info({
-      message: "[solana] runtime configured",
-      solana: buildSolanaRuntimeStatus(),
-    });
-
-    server = app.listen(PORT, () => {
-      logger.info({
-        message: "Server running",
-        port: PORT,
-        env: process.env.NODE_ENV || "development",
-      });
-    });
-
-    server.on("error", (error) => {
-      logger.error({
-        message: "HTTP server failed",
-        error: serializeError(error),
-      });
-      process.exit(1);
+    setDatabaseStatus("connected", {
+      error: null,
+      syncStatus: DB_SYNC_ON_START ? "completed" : "skipped",
     });
   } catch (error) {
-    logger.error({
-      message: "Failed to start server",
-      error: serializeError(error),
+    const dbError = {
+      name: error.name,
+      message: error.message,
+      code: error.code,
+    };
+
+    setDatabaseStatus("disconnected", {
+      error: dbError,
+      syncStatus: DB_SYNC_ON_START ? "failed" : "skipped",
     });
-    process.exit(1);
+    logger.error({ message: "Database initialization failed", error: dbError });
   }
 }
 
-process.on("SIGINT", () => {
-  void shutdown("SIGINT");
-});
-
-process.on("SIGTERM", () => {
-  void shutdown("SIGTERM");
-});
-
-process.on("uncaughtException", (error) => {
-  logger.error({
-    message: "Uncaught exception",
-    error: serializeError(error),
+function startServer() {
+  setDatabaseStatus("initializing", {
+    error: null,
+    syncStatus: DB_SYNC_ON_START ? "pending" : "skipped",
   });
-  process.exit(1);
-});
 
-process.on("unhandledRejection", (reason) => {
-  logger.error({
-    message: "Unhandled promise rejection",
-    error:
-      reason instanceof Error
-        ? serializeError(reason)
-        : {
-            message:
-              typeof reason === "string" ? reason : JSON.stringify(reason),
-          },
+  const server = app.listen(PORT, () => {
+    logger.info({ message: `Server running on port ${PORT}` });
   });
-  process.exit(1);
-});
 
-void startServer();
+  server.on("error", (error) => {
+    logger.error({ message: "HTTP server failed", error });
+    process.exit(1);
+  });
+
+  void connectDatabase();
+}
+
+startServer();
