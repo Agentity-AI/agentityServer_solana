@@ -1,7 +1,3 @@
-// src/models/index.js
-// Central model registry + association definitions.
-// MODIFIED: added AgentHcsRegistry and AgentHcsMessage associations.
-
 const Agent             = require("./agent");
 const AgentMetadata     = require("./agentMetadata");
 const AgentReputation   = require("./agentReputation");
@@ -15,10 +11,8 @@ const Alert             = require("./alert");
 const TransactionRecord = require("./transactionRecord");
 const TransactionPolicy = require("./transactionPolicy");
 const UserApiKey = require("./userApiKey");
-
-// ── NEW: Hedera HCS models ─────────────────────────────────
-const AgentHcsRegistry  = require("./agentHcsRegistry");
-const AgentHcsMessage   = require("./agentHcsMessage");
+const AgentSolanaRegistry = require("./agentSolanaRegistry");
+const AgentSolanaProof = require("./agentSolanaProof");
 
 // ── Existing associations ──────────────────────────────────
 Agent.hasOne(AgentMetadata,   { foreignKey: "agent_id", as: "metadata"   });
@@ -45,14 +39,17 @@ Alert.belongsTo(Agent, { foreignKey: "agent_id", as: "agent" });
 Agent.hasMany(TransactionRecord, { foreignKey: "agent_id", as: "transactions" });
 TransactionRecord.belongsTo(Agent, { foreignKey: "agent_id", as: "agent" });
 
-// ── NEW: Hedera associations ───────────────────────────────
-// One HCS registry entry per agent (topic ID + schedule state)
-Agent.hasOne(AgentHcsRegistry,  { foreignKey: "agent_id", as: "hcsRegistry" });
-AgentHcsRegistry.belongsTo(Agent, { foreignKey: "agent_id" });
+Agent.hasOne(AgentSolanaRegistry, {
+  foreignKey: "agent_id",
+  as: "solanaRegistry",
+});
+AgentSolanaRegistry.belongsTo(Agent, { foreignKey: "agent_id" });
 
-// Many HCS messages per agent (full audit trail)
-Agent.hasMany(AgentHcsMessage,  { foreignKey: "agent_id", as: "hcsMessages" });
-AgentHcsMessage.belongsTo(Agent, { foreignKey: "agent_id" });
+Agent.hasMany(AgentSolanaProof, {
+  foreignKey: "agent_id",
+  as: "solanaProofs",
+});
+AgentSolanaProof.belongsTo(Agent, { foreignKey: "agent_id" });
 
 module.exports = {
   Agent,
@@ -68,7 +65,6 @@ module.exports = {
   TransactionRecord,
   TransactionPolicy,
   UserApiKey,
-  // NEW
-  AgentHcsRegistry,
-  AgentHcsMessage,
+  AgentSolanaRegistry,
+  AgentSolanaProof,
 };

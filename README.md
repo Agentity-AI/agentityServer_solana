@@ -1,715 +1,206 @@
-# Agentity Backend
+# Agentity Solana Backend
 
-Agentity is a backend platform for **registering, simulating, auditing, and executing AI agents with verifiable blockchain traceability**.
+Agentity is the trust, simulation, payment, and audit backend for autonomous AI agents on Solana.
 
-The system enables AI agents to:
+It gives every agent a verifiable identity, wallet, trust score, simulation history, payment trail, execution proof, and dashboard-ready audit log. The core demo flow is:
 
-* register identities
-* simulate actions safely
-* execute tasks
-* coordinate work
-* settle payments via **Hedera microtransactions**
-* produce **auditable execution trails**
+1. Register an agent with a Solana public key.
+2. Verify the agent and write a Solana proof memo.
+3. Simulate a risky action before execution.
+4. Pay the agent with SOL or an SPL token.
+5. Execute the task and write an execution proof to Solana.
+6. Inspect the dashboard, payments, transactions, alerts, and proof history.
 
-This backend powers **AI-agent automation workflows for Web3 environments**.
+## Stack
 
+- Node.js, Express, Sequelize, PostgreSQL/Supabase
+- Supabase Auth for user sessions
+- Solana Web3.js for devnet/mainnet RPC, memo proofs, SOL transfers
+- SPL Token support for token payments such as USDC-SPL or CASH-SPL
+- Swagger/OpenAPI at `/docs`
+- Docker sandbox simulation service
+- Optional AWS KMS signing for execution audit payloads
 
-# Core Stack
-
-Agentity integrates the following infrastructure:
-
-* **Supabase Postgres** → primary database
-* **Supabase Auth** → JWT authentication + httpOnly cookies
-* **Docker Sandbox** → secure AI simulation environments
-* **Chainlink CRE** → workflow automation and agent execution orchestration
-* **Hedera Hashgraph** → microtransaction payments between agents
-* **AWS KMS** → secure cryptographic signing and compliance audit logs
-* **Express + Sequelize** → backend API architecture
-
-
-# Live URLs
-
-Backend API:
-
-```
-https://hederaagentitybackend.onrender.com
-```
-
-Swagger API documentation:
-
-```
-https://hederaagentitybackend.onrender.com/docs
-```
-
-
-# Local Setup
-
-## 1. Install dependencies
+## Quick Start
 
 ```bash
 npm install
-```
-
-
-# Environment Variables
-
-Create a `.env` file.
-
-## Required
-
-```
-DATABASE_URL=
-SUPABASE_URL=
-SUPABASE_SERVICE_ROLE_KEY=
-SUPABASE_ANON_KEY=
-```
-
-
-## Optional — Chainlink CRE
-
-```
-CRE_WEBHOOK_URL=
-CRE_API_KEY=
-```
-
-
-## Optional — Hedera
-
-```
-HEDERA_OPERATOR_ID=
-HEDERA_OPERATOR_KEY=
-HEDERA_NETWORK=testnet
-```
-
-
-## Optional — AWS KMS
-
-```
-AWS_REGION=
-AWS_KMS_KEY_ID=
-```
-
-## Optional — Integration snippets
-
-```
-PUBLIC_API_BASE_URL=https://hederaagentitybackend.onrender.com
-```
-
-
-# Run the server
-
-```
+cp .env.example .env
 npm run dev
 ```
 
-Server will run on:
+If you do not have an `.env.example` yet, create `.env` with the variables in the next section.
 
-```
-http://localhost:5000
-```
+## Environment
 
+Required:
 
-# API Documentation
-
-Swagger UI:
-
-Local:
-
-```
-http://localhost:5000/docs
+```bash
+DATABASE_URL=postgresql://USER:PASSWORD@HOST:5432/postgres
+SUPABASE_URL=https://YOUR_PROJECT.supabase.co
+SUPABASE_ANON_KEY=YOUR_SUPABASE_ANON_KEY
+SUPABASE_SERVICE_ROLE_KEY=YOUR_SUPABASE_SERVICE_ROLE_KEY
+PUBLIC_API_BASE_URL=http://localhost:5000
 ```
 
-Production:
+Solana:
 
-```
-https://hederaagentitybackend.onrender.com/docs
-```
-
-Swagger allows direct API testing through **Try It Out**.
-
-## Frontend Contract
-
-For a screen-by-screen frontend handoff guide, use:
-
-[`FRONTEND_INTEGRATION_CONTRACT.md`](/Users/decagon/Documents/Kaycee%20-%20Founders%20Cohort/Agentity/FRONTEND_INTEGRATION_CONTRACT.md)
-
-## Backend-Driven Integration Flow
-
-The frontend integration/setup screen should be backend-driven. The UI can own the layout, tabs, checklist, and copy buttons, while the backend returns user-specific agent state, API key preview, embed config, and generated code snippets.
-
-### Integration Endpoints
-
-```text
-GET /integrations/overview
-POST /integrations/api-keys
-GET /integrations/snippets?type=javascript
-GET /integrations/snippets?type=react
-GET /integrations/snippets?type=html
-GET /integrations/snippets?type=curl
-PATCH /integrations/embed-config
+```bash
+SOLANA_CLUSTER=devnet
+SOLANA_RPC_URL=https://api.devnet.solana.com
+SOLANA_COMMITMENT=confirmed
+SOLANA_OPERATOR_PUBLIC_KEY=YOUR_OPERATOR_PUBLIC_KEY
+SOLANA_OPERATOR_KEYPAIR_JSON=[1,2,3,...]
+SOLANA_ENABLE_REAL_PROOFS=true
+SOLANA_ENABLE_REAL_TRANSFERS=false
+SOLANA_REGISTRY_PROGRAM_ID=
 ```
 
-### Recommended Frontend Flow
+Optional:
 
-```text
-1. GET /integrations/overview
-2. If hasAgent=false, send user through POST /agents/register
-3. If hasVerifiedAgent=false, send user through POST /agents/{id}/verify
-4. If hasApiKey=false, call POST /integrations/api-keys
-5. PATCH /integrations/embed-config to save agent, origins, theme, and webhook
-6. GET /integrations/snippets?type=react or another supported snippet type
+```bash
+AWS_REGION=
+AWS_KMS_KEY_ID=
+CRE_WEBHOOK_URL=
+SOLANA_PRICE_SOL_EXECUTION=0.050
+SOLANA_PRICE_SPL_EXECUTION=5.00
 ```
 
-### Save Embed Config
+`SOLANA_ENABLE_REAL_PROOFS=true` writes memo transactions when an operator keypair is configured. `SOLANA_ENABLE_REAL_TRANSFERS=true` sends real SOL/SPL payments from the operator wallet, so only enable it after funding the operator wallet on the target cluster.
 
-```http
-PATCH /integrations/embed-config
-Authorization: Bearer <jwt>
-Content-Type: application/json
+## Getting Solana Keys
+
+1. Install the Solana CLI from https://docs.solana.com/cli/install-solana-cli-tools.
+2. Point it to devnet:
+
+```bash
+solana config set --url https://api.devnet.solana.com
 ```
 
-```json
-{
-  "agentId": "ac0d21d5-bb02-4d52-8004-4725488cf007",
-  "allowedOrigins": ["https://example.com"],
-  "theme": "system",
-  "defaultTaskType": "execution",
-  "webhookUrl": "https://example.com/api/agentity-webhook"
-}
+3. Create an operator keypair:
+
+```bash
+solana-keygen new --outfile ~/.config/solana/agentity-operator.json
+solana address --keypair ~/.config/solana/agentity-operator.json
 ```
 
-### Generate API Key
+4. Fund the operator on devnet:
 
-```http
-POST /integrations/api-keys
-Authorization: Bearer <jwt>
+```bash
+solana airdrop 2 --keypair ~/.config/solana/agentity-operator.json
+solana balance --keypair ~/.config/solana/agentity-operator.json
 ```
 
-The plaintext API key is returned once. Later calls only expose the safe preview through `/integrations/overview`.
+5. Put the keypair into `.env` using one of these approaches:
 
-### Generate Snippet
-
-```http
-GET /integrations/snippets?type=react
-Authorization: Bearer <jwt>
+```bash
+SOLANA_OPERATOR_KEYPAIR_PATH=/absolute/path/to/agentity-operator.json
 ```
 
-The snippet response includes:
+or paste the JSON array:
 
-* `code` - ready-to-copy snippet
-* `variables` - backend-selected values used in the snippet
-* `warnings` - missing setup steps such as no agent or no API key
+```bash
+SOLANA_OPERATOR_KEYPAIR_JSON=[12,34,56,...]
+```
 
-## Recommended Swagger Test Flow
+For production, use a secured secret manager and keep `SOLANA_ENABLE_REAL_TRANSFERS=false` until the payment flow has been reviewed.
 
-Use Swagger in this order for the smoothest end-to-end backend test:
+## API Surface
+
+Swagger is the source of truth:
 
 ```text
-1. POST /auth/register or POST /auth/login
-2. POST /agents/register
-3. GET /agents/my
-4. POST /agents/{id}/verify
-5. POST /wallets/link
-6. POST /simulation/run
-7. POST /tasks/request
-8. POST /tasks/{id}/simulate
-9. POST /tasks/{id}/pay
-10. POST /tasks/{id}/execute
-11. POST /payments/kibble-link
-12. GET /payments/history
-13. GET /transactions/history
-14. GET /workflow/summary
-15. GET /alerts
-16. GET /integrations/overview
-17. POST /integrations/api-keys
-18. PATCH /integrations/embed-config
-19. GET /integrations/snippets?type=react
+GET /docs
 ```
 
-### Swagger Tips
+Important endpoints:
+
+- `POST /auth/register`, `POST /auth/login`
+- `POST /agents/register`
+- `POST /agents/:id/verify`
+- `GET /agents/:id/solana-history`
+- `POST /wallets/link`
+- `POST /simulation/run`
+- `POST /tasks/request`
+- `POST /tasks/:id/simulate`
+- `POST /tasks/:id/pay`
+- `POST /tasks/:id/execute`
+- `GET /payments/history`
+- `GET /transactions/history`
+- `GET /dashboard/overview`
+- `GET /solana/status`
+- `GET /solana/transactions/:signature`
+
+## Solana Payment Behavior
+
+`POST /tasks/:id/pay` accepts:
+
+```json
+{
+  "currency": "SOL"
+}
+```
+
+or SPL token metadata:
+
+```json
+{
+  "currency": "CASH-SPL",
+  "tokenMint": "TOKEN_MINT_ADDRESS",
+  "tokenDecimals": 6
+}
+```
+
+When `SOLANA_ENABLE_REAL_TRANSFERS` is not `true`, the backend still creates a paid record with `simulated: true`. This keeps demos and frontend integration smooth before the operator wallet is funded.
+
+## Solana Proof Model
+
+Agentity writes compact memo proofs to Solana:
+
+- `AGENT_REGISTERED`
+- `VERIFIED`
+- `AGENT_FLAGGED`
+- `TASK_EXECUTED`
+
+The full payload is stored in Postgres, while the memo stores a deterministic hash:
 
 ```text
-Use the JWT returned from login/register in the Authorization header as:
-Bearer <jwt>
-
-If a route requires an agent id, first fetch it from GET /agents/my.
-
-If a route requires a task id, first create it from POST /tasks/request.
-```
-
-
-
-# Authentication Flow
-
-Agentity uses **Supabase Auth**.
-
-### Endpoints
-
-```
-POST /auth/register
-POST /auth/login
-POST /auth/logout
-```
-
-Auth returns:
-
-```
-jwt → Supabase access token
-```
-
-And sets a cookie:
-
-```
-agentity_jwt (httpOnly)
-```
-
-
-### Protected endpoints accept either
-
-```
-Authorization: Bearer <jwt>
-```
-
-or
-
-```
-agentity_jwt cookie
-```
-
-Integration clients can also use an active generated API key for task endpoints:
-
-```
-Authorization: Bearer <agty_live_api_key>
-```
-
-
-# Core Backend Modules
-
-
-# Agents
-
-Agents represent autonomous AI services.
-
-Each agent belongs to a specific user.
-
-```
-creator_id → Supabase user id
-```
-
-
-### Register Agent
-
-```
-POST /agents/register
-```
-
-Creates:
-
-* Agent
-* AgentMetadata
-* AgentReputation
-* AgentBehaviorLog
-* User audit log
-
----
-
-### Fetch User Agents
-
-```
-GET /agents/my
-```
-
-Returns agents created by the authenticated user.
-
----
-
-### Fetch Agents by User
-
-```
-GET /agents/user/:userId
-```
-
----
-
-### Fetch Agent Profile
-
-```
-GET /agents/:id
-```
-
----
-
-### Verify Agent
-
-```
-POST /agents/:id/verify
-```
-
-Verification is required before execution.
-
-
-# Simulation Engine
-
-Simulations test agent behavior safely.
-
-Simulation runs inside a **sandbox container**.
-
-
-### Run Simulation
-
-```
-POST /simulation/run
-```
-
-or
-
-```
-POST /simulation/:id
-```
-
-
-### Simulation Result Example
-
-```json
-{
-  "id": "simulation-run-uuid",
-  "agentId": "agent-uuid",
-  "scenario": "token_swap",
-  "riskScore": 36,
-  "vulnerabilities": 1,
-  "status": "completed"
-}
-```
-
-
-# Smart Contract Audit
-
-Agents can analyze smart contracts.
-
-Supports:
-
-```
-paste source
-github repository
-```
-
-
-### Run Audit
-
-```
-POST /audits
-```
-
-
-### Audit History
-
-```
-GET /audits/history
-```
-
-
-### Audit Details
-
-```
-GET /audits/:id
-```
-
-
-# Hedera Agent Wallets
-
-Agents can be linked to **Hedera accounts**.
-
-This allows:
-
-* agent payments
-* microtransactions
-* coordination marketplaces
-
-
-### Link Wallet
-
-```
-POST /wallets/link
-```
-
-Payload:
-
-```json
-{
-  "agentId": "uuid",
-  "hederaAccountId": "0.0.12345",
-  "hederaPublicKey": "public-key",
-  "kmsKeyId": "optional"
-}
-```
-
-
-# Task Execution System
-
-Tasks allow users to request work from AI agents.
-
-Example tasks:
-
-* AI analysis
-* smart contract audit
-* blockchain execution
-* data processing
-
-
-## Task Lifecycle
-
-```
-Request
-↓
-Simulation
-↓
-Payment (Hedera)
-↓
-Execution
-↓
-Audit log
-```
-
-
-### Create Task
-
-```
-POST /tasks/request
-```
-
-
-### Simulate Task
-
-```
-POST /tasks/:id/simulate
-```
-
-
-### Pay For Task
-
-```
-POST /tasks/:id/pay
-```
-
-Creates Hedera microtransaction.
-
-
-### Execute Task
-
-```
-POST /tasks/:id/execute
-```
-
-Execution includes:
-
-* sandbox validation
-* CRE workflow
-* optional AWS KMS signature
-
-
-### Task History
-
-```
-GET /tasks/history
-```
-
-
-# Hedera Payment Records
-
-Payments between users and agents are stored.
-
-
-### Payment History
-
-```
-GET /payments/history
-```
-
-Example:
-
-```json
-{
-  "id": "payment-uuid",
-  "amountHbar": 0.5,
-  "hederaTxId": "0.0.1234@1680000000",
-  "status": "paid"
-}
-```
-
-
-# AWS KMS Signing
-
-KMS enables secure signing of agent operations.
-
-Benefits:
-
-* enterprise key management
-* audit trail
-* cryptographic compliance
-
-
-### KMS Audit Logs
-
-Stored in table:
-
-```
-kms_audit_logs
-```
-
-Each log records:
-
-* user id
-* agent id
-* key used
-* payload signed
-* signature result
-
-
-# Chainlink CRE Workflow
-
-CRE manages agent automation.
-
-Workflow location:
-
-```
-agentity-cre/agent-execution
-```
-
-
-### Run CRE simulation
-
-```
-cd agentity-cre
-bun install --cwd ./agent-execution
-cre workflow simulate agent-execution --target staging-settings
-```
-
-
-# Health Check
-
-```
-GET /health
-```
-
-Example response:
-
-```json
-{
-  "status": "healthy",
-  "database": "connected"
-}
-```
-
-
-# Database Tables
-
-Key tables include:
-
-```
-agents
-agent_metadata
-agent_reputations
-agent_behavior_logs
-simulation_runs
-smart_contract_audits
-task_executions
-payment_records
-agent_wallets
-kms_audit_logs
-user_agent_events
-```
-
-
-# End-to-End Test Flow
-
-1. Register user
-
-```
-POST /auth/register
-```
-
-2. Login
-
-```
-POST /auth/login
-```
-
-3. Register agent
-
-```
-POST /agents/register
-```
-
-4. Verify agent
-
-```
-POST /agents/:id/verify
-```
-
-5. Link Hedera wallet
-
-```
-POST /wallets/link
+AGENTITY:VERIFIED:<agentId>:<sha256-proof-hash>
 ```
 
-6. Create task
+This makes proof lookup fast for the frontend and keeps on-chain data small.
 
-```
-POST /tasks/request
-```
+## Optional Anchor Program
 
-7. Simulate task
-
-```
-POST /tasks/:id/simulate
-```
+The backend is already useful with memo proofs. The `programs/agentity_registry` scaffold adds the Solana-native account model for a deeper hackathon demo:
 
-8. Pay for task
+- `AgentProfile`
+- `CapabilityPolicy`
+- `AgentActionLog`
+- `AgentReputation`
 
-```
-POST /tasks/:id/pay
-```
+Use it when you want to deploy a registry program and set `SOLANA_REGISTRY_PROGRAM_ID`.
 
-9. Execute task
+## Test
 
-```
-POST /tasks/:id/execute
+```bash
+npm test
 ```
 
-10. View dashboard
+Smoke test against a running API:
 
+```bash
+npm run smoke
 ```
-GET /dashboard/overview
-```
-
-
-# Hackathon Use Case
-
-Agentity demonstrates **autonomous AI agents coordinating and settling payments using decentralized infrastructure**.
-
-Agents can:
-
-* advertise capabilities
-* simulate decisions
-* perform verifiable tasks
-* settle payments via Hedera
-* produce audit-grade execution logs
-
-This enables a **decentralized marketplace for autonomous AI services**.
-
 
+## Submission Story
 
-# Current Backend Scope
+Agentity is the trust and execution layer for autonomous AI agents on Solana. It helps users answer:
 
-The backend currently supports:
+- Can I trust this agent?
+- What is it allowed to do?
+- What happened before money moved?
+- Was the agent paid?
+- Can I audit the result later?
 
-* user authentication
-* agent identity registry
-* sandbox simulation
-* smart contract auditing
-* AI task coordination
-* Hedera microtransaction payments
-* CRE workflow execution
-* AWS KMS signing
-* blockchain traceability
-* dashboard analytics
+That story maps directly to Solana performance: fast verification, fast payment, fast proof lookup, and composable APIs for any Solana app that wants to use trusted agents.

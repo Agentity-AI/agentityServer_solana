@@ -7,7 +7,7 @@ const Agent = require("../models/agent");
 const AgentMetadata = require("../models/agentMetadata");
 const AgentReputation = require("../models/agentReputation");
 const AgentBehaviorLog = require("../models/agentBehaviorLog");
-const AgentHcsRegistry = require("../models/agentHcsRegistry");
+const AgentSolanaRegistry = require("../models/agentSolanaRegistry");
 
 const { requireAuth } = require("../middleware/auth");
 const { generateFingerprint } = require("../services/fingerprint");
@@ -16,12 +16,10 @@ const {
   ensureAgentRegistered,
   runImmediateVerification,
   getAgentHistory,
-} = require("../services/hedera/hcsRegistryService");
-const {
-  scheduleReverification,
-} = require("../services/hedera/hcsSchedulerService");
-const { linkWalletToAgent } = require("../services/hedera/walletLinkService");
+} = require("../services/solana/registryService");
+const { linkWalletToAgent } = require("../services/solana/walletService");
 const { createAlert } = require("../services/alerts/alertService");
+const { getSolanaCluster, getSolanaExplorerUrl } = require("../config/solana");
 const {
   ValidationError,
   optionalObject,
@@ -132,18 +130,20 @@ function formatAgentResponse(agent, options = {}) {
           riskLevel: data.reputation.risk_level,
         }
       : null,
-    hcs: data.hcsRegistry
+    solana: data.solanaRegistry
       ? {
-          topicId: data.hcsRegistry.hcs_topic_id,
-          currentScore: data.hcsRegistry.current_score,
-          currentRiskLevel: data.hcsRegistry.current_risk_level,
-          verificationCount: data.hcsRegistry.verification_count,
-          lastVerifiedAt: data.hcsRegistry.last_verified_at,
-          nextScheduledAt: data.hcsRegistry.next_scheduled_at,
-          status: data.hcsRegistry.status,
-          hashscanUrl: `https://hashscan.io/${
-            process.env.HEDERA_NETWORK || "testnet"
-          }/topic/${data.hcsRegistry.hcs_topic_id}`,
+          registrationSignature: data.solanaRegistry.registration_signature,
+          registrationSlot: data.solanaRegistry.registration_slot,
+          proofHash: data.solanaRegistry.proof_hash,
+          currentScore: data.solanaRegistry.current_score,
+          currentRiskLevel: data.solanaRegistry.current_risk_level,
+          verificationCount: data.solanaRegistry.verification_count,
+          lastVerifiedAt: data.solanaRegistry.last_verified_at,
+          status: data.solanaRegistry.status,
+          network: data.solanaRegistry.network,
+          explorerUrl: data.solanaRegistry.registration_signature
+            ? getSolanaExplorerUrl(data.solanaRegistry.registration_signature, "tx")
+            : null,
         }
       : null,
     lastActivityAt: lastActivity?.createdAt || null,
@@ -168,7 +168,7 @@ async function hydrateAgentRelations(agents) {
   const agentIds = agents.map((agent) => agent.id);
   if (agentIds.length === 0) return [];
 
-  const [metadataRows, reputationRows, hcsRows] = await Promise.all([
+  const [metadataRows, reputationRows, solanaRows] = await Promise.all([
     AgentMetadata.findAll({
       where: { agent_id: { [Op.in]: agentIds } },
       order: [["updatedAt", "DESC"], ["createdAt", "DESC"]],
@@ -177,7 +177,7 @@ async function hydrateAgentRelations(agents) {
       where: { agent_id: { [Op.in]: agentIds } },
       order: [["updatedAt", "DESC"], ["createdAt", "DESC"]],
     }),
-    AgentHcsRegistry.findAll({
+    AgentSolanaRegistry.findAll({
       where: { agent_id: { [Op.in]: agentIds } },
       order: [["updated_at", "DESC"], ["created_at", "DESC"]],
     }),
@@ -185,7 +185,7 @@ async function hydrateAgentRelations(agents) {
 
   const metadataMap = buildLatestByAgentId(metadataRows);
   const reputationMap = buildLatestByAgentId(reputationRows);
-  const hcsMap = buildLatestByAgentId(hcsRows);
+  const solanaMap = buildLatestByAgentId(solanaRows);
 
   return agents.map((agent) => {
     const json = typeof agent.toJSON === "function" ? agent.toJSON() : { ...agent };
@@ -194,7 +194,7 @@ async function hydrateAgentRelations(agents) {
       ...json,
       metadata: metadataMap.get(agent.id) || null,
       reputation: reputationMap.get(agent.id) || null,
-      hcsRegistry: hcsMap.get(agent.id) || null,
+      solanaRegistry: solanaMap.get(agent.id) || null,
     };
   });
 }
@@ -254,7 +254,7 @@ async function getLatestAgentActivity(agentId) {
  *                 description: Recommended frontend field. Use one of the labels returned by `GET /agents/types`.
  *               publicKey:
  *                 type: string
- *                 example: "0x42Ec816b0923eEF0c76589627107AdaBb749AB75"
+ *                 example: "8uQhQMGm4qMVM9Mp2HcJqKqB7GMGS7gqKq2m2ZzC7C4u"
  *                 description: Wallet or public identity key. The backend still requires this for uniqueness and fingerprinting.
  *               description:
  *                 type: string
@@ -268,7 +268,7 @@ async function getLatestAgentActivity(agentId) {
  *                 additionalProperties: true
  *                 example:
  *                   strategy: "swing"
- *                   network: "avalanche"
+ *                   network: "solana-devnet"
  *                 description: Optional JSON field from the modal's Metadata input. Strings that contain valid JSON are also accepted by the backend.
  *               modelName:
  *                 type: string
@@ -306,18 +306,18 @@ async function getLatestAgentActivity(agentId) {
  *               value:
  *                 agentName: "Alpha Trading Bot"
  *                 agentType: "Trading Bot"
- *                 publicKey: "0x42Ec816b0923eEF0c76589627107AdaBb749AB75"
+ *                 publicKey: "8uQhQMGm4qMVM9Mp2HcJqKqB7GMGS7gqKq2m2ZzC7C4u"
  *                 description: "Executes monitored trading strategies across supported protocols."
  *                 apiEndpoint: "https://agent.example.com/api/trading-bot"
  *                 metadata:
  *                   strategy: "swing"
- *                   network: "avalanche"
+ *                   network: "solana-devnet"
  *             advancedPayload:
  *               summary: Optional advanced backend payload
  *               value:
  *                 agentName: "Treasury Risk Monitor"
  *                 agentType: "Risk Monitoring Agent"
- *                 publicKey: "0x42Ec816b0923eEF0c76589627107AdaBb749AB75"
+ *                 publicKey: "8uQhQMGm4qMVM9Mp2HcJqKqB7GMGS7gqKq2m2ZzC7C4u"
  *                 description: "Monitors treasury and payment risk for the DAO."
  *                 apiEndpoint: "https://agent.example.com/api"
  *                 modelName: "gpt-4.1"
@@ -345,7 +345,7 @@ async function getLatestAgentActivity(agentId) {
  *                   example: "Treasury Risk Monitor"
  *                 publicKey:
  *                   type: string
- *                   example: "0x42Ec816b0923eEF0c76589627107AdaBb749AB75"
+ *                   example: "8uQhQMGm4qMVM9Mp2HcJqKqB7GMGS7gqKq2m2ZzC7C4u"
  *                 fingerprint:
  *                   type: string
  *                   example: "b9e3f7d1a2c4"
@@ -532,7 +532,7 @@ router.get("/types", (req, res) => {
  *                         example: "Treasury Risk Monitor"
  *                       publicKey:
  *                         type: string
- *                         example: "0x9f3C2B4d7A8e5F1b2C3D4E5F6A7B8C9D0E1F2A3B"
+ *                         example: "8uQhQMGm4qMVM9Mp2HcJqKqB7GMGS7gqKq2m2ZzC7C4u"
  *                       fingerprint:
  *                         type: string
  *                         example: "b9e3f7d1a2c4"
@@ -573,13 +573,13 @@ router.get("/types", (req, res) => {
  *                           riskLevel:
  *                             type: string
  *                             example: "low"
- *                       hcs:
+ *                       solana:
  *                         nullable: true
  *                         type: object
  *                         properties:
- *                           topicId:
+ *                           registrationSignature:
  *                             type: string
- *                             example: "0.0.7149999"
+ *                             example: "5h6wZrR6s5eYbR5m9yQ6s8zM7sLx..."
  *                           currentScore:
  *                             type: integer
  *                             example: 75
@@ -593,16 +593,12 @@ router.get("/types", (req, res) => {
  *                             type: string
  *                             format: date-time
  *                             example: "2026-03-16T15:26:29.803Z"
- *                           nextScheduledAt:
- *                             type: string
- *                             format: date-time
- *                             example: "2026-03-16T16:28:29.803Z"
  *                           status:
  *                             type: string
  *                             example: "verified"
- *                           hashscanUrl:
+ *                           explorerUrl:
  *                             type: string
- *                             example: "https://hashscan.io/testnet/topic/0.0.7149999"
+ *                             example: "https://explorer.solana.com/tx/..."
  *                       lastActivityAt:
  *                         nullable: true
  *                         type: string
@@ -652,7 +648,7 @@ router.get("/my", requireAuth, async (req, res) => {
  *   get:
  *     tags: [Agents]
  *     summary: Get a single agent owned by the authenticated user
- *     description: Returns one normalized agent object including metadata, reputation, and HCS registry details when available.
+ *     description: Returns one normalized agent object including metadata, reputation, and Solana proof details when available.
  *     security:
  *       - bearerAuth: []
  *       - cookieAuth: []
@@ -682,7 +678,7 @@ router.get("/my", requireAuth, async (req, res) => {
  *                   example: "Treasury Risk Monitor"
  *                 publicKey:
  *                   type: string
- *                   example: "0x9f3C2B4d7A8e5F1b2C3D4E5F6A7B8C9D0E1F2A3B"
+ *                   example: "8uQhQMGm4qMVM9Mp2HcJqKqB7GMGS7gqKq2m2ZzC7C4u"
  *                 fingerprint:
  *                   type: string
  *                   example: "b9e3f7d1a2c4"
@@ -723,13 +719,13 @@ router.get("/my", requireAuth, async (req, res) => {
  *                     riskLevel:
  *                       type: string
  *                       example: "low"
- *                 hcs:
+ *                 solana:
  *                   nullable: true
  *                   type: object
  *                   properties:
- *                     topicId:
+ *                     registrationSignature:
  *                       type: string
- *                       example: "0.0.7149999"
+ *                       example: "5h6wZrR6s5eYbR5m9yQ6s8zM7sLx..."
  *                     currentScore:
  *                       type: integer
  *                       example: 75
@@ -743,16 +739,12 @@ router.get("/my", requireAuth, async (req, res) => {
  *                       type: string
  *                       format: date-time
  *                       example: "2026-03-16T15:26:29.803Z"
- *                     nextScheduledAt:
- *                       type: string
- *                       format: date-time
- *                       example: "2026-03-16T16:28:29.803Z"
  *                     status:
  *                       type: string
  *                       example: "verified"
- *                     hashscanUrl:
+ *                     explorerUrl:
  *                       type: string
- *                       example: "https://hashscan.io/testnet/topic/0.0.7149999"
+ *                       example: "https://explorer.solana.com/tx/..."
  *                 lastActivityAt:
  *                   nullable: true
  *                   type: string
@@ -812,14 +804,12 @@ router.get("/:id", requireAuth, async (req, res) => {
  * /agents/{id}/verify:
  *   post:
  *     tags: [Agents]
- *     summary: Verify agent and optionally link Hedera wallet details
+ *     summary: Verify agent and optionally link Solana wallet details
  *     description: |
- *       Verifies the agent locally first.
- *       Then attempts Hedera sync:
- *       - If Hedera succeeds, hederaSyncStatus = "synced"
- *       - If Hedera is not configured or fails, local verification still succeeds and hederaSyncStatus = "failed" or "disabled"
+ *       Verifies the agent locally first, calculates its trust score, and writes
+ *       a Solana proof memo transaction when an operator keypair is configured.
  *
- *       Frontend can optionally send Hedera wallet details here instead of calling a separate wallet endpoint.
+ *       Frontend can optionally send Solana wallet details here instead of calling a separate wallet endpoint.
  *     security:
  *       - bearerAuth: []
  *       - cookieAuth: []
@@ -837,12 +827,15 @@ router.get("/:id", requireAuth, async (req, res) => {
  *           schema:
  *             type: object
  *             properties:
- *               hederaAccountId:
+ *               solanaAddress:
  *                 type: string
- *                 example: "0.0.7148109"
- *               hederaPublicKey:
+ *                 example: "8uQhQMGm4qMVM9Mp2HcJqKqB7GMGS7gqKq2m2ZzC7C4u"
+ *               solanaPublicKey:
  *                 type: string
- *                 example: "302a300506032b6570032100examplepublickey"
+ *                 example: "8uQhQMGm4qMVM9Mp2HcJqKqB7GMGS7gqKq2m2ZzC7C4u"
+ *               network:
+ *                 type: string
+ *                 example: "devnet"
  *               kmsKeyId:
  *                 type: string
  *                 example: "demo-kms-key"
@@ -863,9 +856,9 @@ router.get("/:id", requireAuth, async (req, res) => {
  *                 verificationStatus:
  *                   type: string
  *                   example: "verified"
- *                 hederaSyncStatus:
+ *                 solanaSyncStatus:
  *                   type: string
- *                   enum: [synced, failed, disabled]
+ *                   enum: [synced, simulated, failed, disabled]
  *                   example: "synced"
  *                 agent:
  *                   type: object
@@ -876,16 +869,18 @@ router.get("/:id", requireAuth, async (req, res) => {
  *                     status:
  *                       type: string
  *                       example: "verified"
- *                 hedera:
+ *                 solana:
  *                   nullable: true
  *                   type: object
  *                   properties:
- *                     topicId:
+ *                     signature:
  *                       type: string
- *                       example: "0.0.7149999"
- *                     sequenceNumber:
+ *                       example: "5h6wZrR6s5eYbR5m9yQ6s8zM7sLx..."
+ *                     slot:
  *                       type: integer
- *                       example: 2
+ *                       example: 371818202
+ *                     proofHash:
+ *                       type: string
  *                     trustScore:
  *                       type: integer
  *                       example: 75
@@ -898,22 +893,15 @@ router.get("/:id", requireAuth, async (req, res) => {
  *                     verificationCount:
  *                       type: integer
  *                       example: 1
- *                     scheduleId:
+ *                     explorerUrl:
  *                       type: string
- *                       example: "0.0.7150001"
- *                     nextCheckAt:
- *                       type: string
- *                       format: date-time
- *                       example: "2026-03-16T16:28:29.803Z"
- *                     hashscanUrl:
- *                       type: string
- *                       example: "https://hashscan.io/testnet/topic/0.0.7149999"
+ *                       example: "https://explorer.solana.com/tx/..."
  *                     error:
  *                       type: string
- *                       example: "Agent verification succeeded locally, but Hedera sync failed."
+ *                       example: "Agent verification succeeded locally, but Solana proof sync failed."
  *                     note:
  *                       type: string
- *                       example: "Agent verification succeeded locally, but Hedera sync failed."
+ *                       example: "Agent verification succeeded locally, but Solana proof sync failed."
  *       401:
  *         description: Unauthorized
  *       400:
@@ -937,13 +925,20 @@ router.post("/:id/verify", requireAuth, async (req, res) => {
       return res.status(404).json({ message: "Agent not found" });
     }
 
-    const { hederaAccountId, hederaPublicKey, kmsKeyId } = req.body || {};
+    const {
+      solanaAddress,
+      solanaPublicKey,
+      walletAddress,
+      network,
+      kmsKeyId,
+    } = req.body || {};
 
-    if (hederaAccountId && hederaPublicKey) {
+    if (solanaAddress || walletAddress) {
       await linkWalletToAgent({
         agentId: agent.id,
-        hederaAccountId,
-        hederaPublicKey,
+        solanaAddress: solanaAddress || walletAddress,
+        solanaPublicKey,
+        network,
         kmsKeyId,
       });
     }
@@ -951,57 +946,43 @@ router.post("/:id/verify", requireAuth, async (req, res) => {
     agent.status = "verified";
     await agent.save();
 
-    let hederaSyncStatus = "disabled";
-    let hedera = null;
+    let solanaSyncStatus = "disabled";
+    let solana = null;
 
     try {
       const registry = await ensureAgentRegistered(agent);
-      const hcsResult = await runImmediateVerification(agent, registry);
+      const proofResult = await runImmediateVerification(agent, registry);
 
-      const intervalSeconds = parseInt(
-        process.env.HEDERA_REVERIFY_INTERVAL_SECONDS || "3600",
-        10,
-      );
-
-      const scheduleId = await scheduleReverification(
-        registry.hcs_topic_id,
-        agent.id,
-        intervalSeconds,
-      );
-
-      const nextCheckAt = new Date(
-        Date.now() + intervalSeconds * 1000,
-      ).toISOString();
-
-      hederaSyncStatus = "synced";
-      hedera = {
-        topicId: hcsResult.topicId,
-        sequenceNumber: hcsResult.sequenceNumber,
-        trustScore: hcsResult.score,
-        isHealthy: hcsResult.isHealthy,
-        riskLevel: hcsResult.riskLevel,
-        verificationCount: hcsResult.verificationCount,
-        scheduleId,
-        nextCheckAt,
-        hashscanUrl: hcsResult.hashscanUrl,
+      solanaSyncStatus = proofResult.simulated ? "simulated" : "synced";
+      solana = {
+        signature: proofResult.signature,
+        slot: proofResult.slot,
+        proofHash: proofResult.proofHash,
+        trustScore: proofResult.score,
+        isHealthy: proofResult.isHealthy,
+        riskLevel: proofResult.riskLevel,
+        verificationCount: proofResult.verificationCount,
+        explorerUrl: proofResult.explorerUrl,
+        network: getSolanaCluster(),
+        simulated: proofResult.simulated,
       };
-    } catch (hcsErr) {
-      hederaSyncStatus = "failed";
-      hedera = {
-        error: hcsErr.message,
-        note: "Agent verification succeeded locally, but Hedera sync failed.",
+    } catch (proofErr) {
+      solanaSyncStatus = "failed";
+      solana = {
+        error: proofErr.message,
+        note: "Agent verification succeeded locally, but Solana proof sync failed.",
       };
       await createAlert({
         userId: req.user.id,
         agentId: agent.id,
         sourceId: agent.id,
         sourceType: "agent",
-        title: "Hedera verification sync failed",
+        title: "Solana verification proof failed",
         severity: "high",
-        type: "hedera_sync_failure",
-        message: hcsErr.message,
+        type: "solana_sync_failure",
+        message: proofErr.message,
       });
-      console.error("[verify] HCS error (non-fatal):", hcsErr.message);
+      console.error("[verify] Solana proof error (non-fatal):", proofErr.message);
     }
 
     await AgentBehaviorLog.create({
@@ -1009,8 +990,8 @@ router.post("/:id/verify", requireAuth, async (req, res) => {
       event_type: "verification",
       event_payload: {
         verified_at: new Date(),
-        hedera_sync_status: hederaSyncStatus,
-        hedera,
+        solana_sync_status: solanaSyncStatus,
+        solana,
       },
       risk_score: 0.0,
     });
@@ -1019,7 +1000,7 @@ router.post("/:id/verify", requireAuth, async (req, res) => {
       action: "agent_verify",
       agentId: agent.id,
       payload: {
-        hederaSyncStatus,
+        solanaSyncStatus,
       },
     });
 
@@ -1027,12 +1008,12 @@ router.post("/:id/verify", requireAuth, async (req, res) => {
       success: true,
       message: "Agent verified successfully",
       verificationStatus: "verified",
-      hederaSyncStatus,
+      solanaSyncStatus,
       agent: {
         id: agent.id,
         status: agent.status,
       },
-      hedera,
+      solana,
     });
   } catch (error) {
     if (error instanceof ValidationError) {
@@ -1046,11 +1027,11 @@ router.post("/:id/verify", requireAuth, async (req, res) => {
 
 /**
  * @openapi
- * /agents/{id}/hcs-history:
+ * /agents/{id}/solana-history:
  *   get:
  *     tags: [Agents]
- *     summary: Get Hedera HCS history for an agent
- *     description: Returns normalized Hedera topic history for the authenticated user's agent.
+ *     summary: Get Solana proof history for an agent
+ *     description: Returns normalized Solana proof history for the authenticated user's agent.
  *     security:
  *       - bearerAuth: []
  *       - cookieAuth: []
@@ -1063,7 +1044,7 @@ router.post("/:id/verify", requireAuth, async (req, res) => {
  *         description: Agent UUID
  *     responses:
  *       200:
- *         description: Hedera HCS history
+ *         description: Solana proof history
  *         content:
  *           application/json:
  *             schema:
@@ -1072,13 +1053,7 @@ router.post("/:id/verify", requireAuth, async (req, res) => {
  *                 agentId:
  *                   type: string
  *                   example: "ac0d21d5-bb02-4d52-8004-4725488cf007"
- *                 topicId:
- *                   type: string
- *                   example: "0.0.7149999"
- *                 hashscanUrl:
- *                   type: string
- *                   example: "https://hashscan.io/testnet/topic/0.0.7149999"
- *                 messageCount:
+ *                 proofCount:
  *                   type: integer
  *                   example: 2
  *                 items:
@@ -1086,12 +1061,11 @@ router.post("/:id/verify", requireAuth, async (req, res) => {
  *                   items:
  *                     type: object
  *                     properties:
- *                       sequenceNumber:
- *                         type: integer
- *                         example: 1
- *                       consensusTimestamp:
+ *                       signature:
  *                         type: string
- *                         example: "1710601234.123456789"
+ *                       slot:
+ *                         nullable: true
+ *                         type: integer
  *                       type:
  *                         nullable: true
  *                         type: string
@@ -1106,9 +1080,9 @@ router.post("/:id/verify", requireAuth, async (req, res) => {
  *       401:
  *         description: Unauthorized
  *       404:
- *         description: Agent not found or not yet registered on HCS
+ *         description: Agent not found or not yet registered on Solana
  */
-router.get("/:id/hcs-history", requireAuth, async (req, res) => {
+router.get("/:id/solana-history", requireAuth, async (req, res) => {
   try {
     const agent = await Agent.findOne({
       where: {
@@ -1121,31 +1095,38 @@ router.get("/:id/hcs-history", requireAuth, async (req, res) => {
       return res.status(404).json({ message: "Agent not found" });
     }
 
-    const registry = await AgentHcsRegistry.findOne({
+    const registry = await AgentSolanaRegistry.findOne({
       where: { agent_id: agent.id },
     });
 
     if (!registry) {
       return res.status(404).json({
         message:
-          "Agent not registered on Hedera HCS yet. Call POST /agents/:id/verify first.",
+          "Agent does not have Solana proofs yet. Call POST /agents/:id/verify first.",
       });
     }
 
-    const history = await getAgentHistory(registry.hcs_topic_id);
+    const history = await getAgentHistory(agent.id);
 
     return res.json({
       agentId: agent.id,
-      topicId: registry.hcs_topic_id,
-      hashscanUrl: `https://hashscan.io/${
-        process.env.HEDERA_NETWORK || "testnet"
-      }/topic/${registry.hcs_topic_id}`,
-      messageCount: history.length,
+      registrationSignature: registry.registration_signature,
+      registrationExplorerUrl: registry.registration_signature
+        ? getSolanaExplorerUrl(registry.registration_signature, "tx")
+        : null,
+      proofCount: history.length,
       items: history.map((item) => ({
-        sequenceNumber: item.sequenceNumber,
-        consensusTimestamp: item.consensusTimestamp,
-        type: item.content?.type || null,
-        payload: item.content || {},
+        id: item.id,
+        signature: item.signature,
+        slot: item.slot,
+        type: item.proof_type,
+        proofHash: item.proof_hash,
+        payload: item.proof_payload || {},
+        explorerUrl: item.signature
+          ? getSolanaExplorerUrl(item.signature, "tx")
+          : null,
+        status: item.status,
+        createdAt: item.created_at,
       })),
     });
   } catch (error) {

@@ -23,7 +23,7 @@ function getBaseUrl() {
   return (
     process.env.PUBLIC_API_BASE_URL ||
     process.env.API_BASE_URL ||
-    "https://hederaagentitybackend.onrender.com"
+    "http://localhost:5000"
   );
 }
 
@@ -91,7 +91,8 @@ async function buildAgentStatus(agent) {
     fingerprint: agent.fingerprint,
     publicKey: agent.public_key,
     hasWallet: Boolean(wallet),
-    hederaAccountId: wallet?.hedera_account_id || null,
+    solanaAddress: wallet?.solana_address || null,
+    network: wallet?.network || null,
     hasKmsKey: Boolean(wallet?.kms_key_id),
   };
 }
@@ -221,7 +222,8 @@ function buildJavascriptSnippet({ baseUrl, agentId }) {
     taskType: "execution",
     inputPayload: {
       target: "swap",
-      network: "hedera-testnet"
+      network: "solana-devnet",
+      tokenOut: "SOL"
     }
   })
 });
@@ -243,7 +245,7 @@ export function AgentityActionButton() {
         agentId: "${agentId || "YOUR_AGENT_ID"}",
         publicClientKey: "${publicClientKey || "YOUR_PUBLIC_CLIENT_KEY"}",
         taskType: "execution",
-        inputPayload: { target: "swap" }
+        inputPayload: { target: "swap", network: "solana-devnet" }
       });
     } finally {
       setLoading(false);
@@ -276,7 +278,8 @@ function buildCurlSnippet({ baseUrl, agentId }) {
     "taskType": "execution",
     "inputPayload": {
       "target": "swap",
-      "network": "hedera-testnet"
+      "network": "solana-devnet",
+      "tokenOut": "SOL"
     }
   }'`;
 }

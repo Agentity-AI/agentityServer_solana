@@ -6,9 +6,8 @@ const { requireAuth } = require("../middleware/auth");
 const { simulateAgent } = require("../services/sandbox/sandboxService");
 const { executeWithCRE } = require("../services/cre/creService");
 const { logEvent } = require("../services/audit/logEvent");
-const {
-  logActionOnChain,
-} = require("../services/blockchain/agentRegistryService");
+const { createExecutionProof } = require("../services/solana/registryService");
+const { getRegistryProgramId } = require("../config/solana");
 const { createAlert } = require("../services/alerts/alertService");
 const { createTransactionRecord } = require("../services/transactions/transactionService");
 
@@ -16,7 +15,7 @@ const { createTransactionRecord } = require("../services/transactions/transactio
  * @openapi
  * tags:
  *   - name: Execution
- *     description: Agent execution via sandbox + CRE workflow + blockchain logging
+ *     description: Agent execution via sandbox + optional CRE workflow + Solana proof logging
  */
 
 /**
@@ -25,7 +24,7 @@ const { createTransactionRecord } = require("../services/transactions/transactio
  *   post:
  *     tags: [Execution]
  *     summary: Execute a verified agent
- *     description: Runs sandbox simulation, CRE execution, and writes action log on-chain if blockchain_agent_id exists.
+ *     description: Runs sandbox simulation, optional CRE execution, and writes a Solana proof memo.
  *     security:
  *       - bearerAuth: []
  *       - cookieAuth: []
@@ -60,7 +59,7 @@ const { createTransactionRecord } = require("../services/transactions/transactio
  *                 execution:
  *                   type: object
  *                   additionalProperties: true
- *                 blockchain:
+ *                 solanaProof:
  *                   nullable: true
  *                   type: object
  *                   additionalProperties: true
@@ -93,27 +92,21 @@ router.post("/:id", requireAuth, async (req, res, next) => {
     try {
       const simulationResult = await simulateAgent(agent.id);
       const executionResult = await executeWithCRE(agent, simulationResult);
-
-      let blockchainResult = null;
-
-      if (agent.blockchain_agent_id) {
-        blockchainResult = await logActionOnChain({
-          blockchainAgentId: agent.blockchain_agent_id,
-          actionType: "execute_agent",
-          actionPayload: {
-            localAgentId: agent.id,
-            fingerprint: agent.fingerprint,
-            simulation: simulationResult,
-            execution: executionResult,
-          },
-        });
-      }
+      const solanaProof = await createExecutionProof({
+        agent,
+        task: {
+          id: agent.id,
+          task_type: "manual_agent_execution",
+        },
+        executionResult,
+        riskScore: simulationResult?.riskScore || simulationResult?.risk_score || 0,
+      });
 
       await createTransactionRecord({
         userId: req.user.id,
         agentId: agent.id,
         transactionType: "execution",
-        contractAddress: process.env.BLOCKCHAIN_REGISTRY_ADDRESS || null,
+        contractAddress: getRegistryProgramId(),
         status: "completed",
         riskRating:
           simulationResult?.riskScore >= 70
@@ -121,14 +114,15 @@ router.post("/:id", requireAuth, async (req, res, next) => {
             : simulationResult?.riskScore >= 40
               ? "medium"
               : "low",
-        txHash: blockchainResult?.txHash || executionResult?.txHash || null,
+        txHash: solanaProof.signature || executionResult?.txHash || null,
         validationSummary: {
-          blockchainLogged: Boolean(blockchainResult),
+          solanaProofHash: solanaProof.proofHash,
+          simulatedProof: solanaProof.simulated,
         },
         executionTrace: {
           simulation: simulationResult,
           execution: executionResult,
-          blockchain: blockchainResult,
+          solanaProof,
         },
       });
 
@@ -137,14 +131,14 @@ router.post("/:id", requireAuth, async (req, res, next) => {
         agentId: agent.id,
         payload: {
           executionResult,
-          blockchainResult,
+          solanaProof,
         },
       });
 
       return res.json({
         simulation: simulationResult,
         execution: executionResult,
-        blockchain: blockchainResult,
+        solanaProof,
       });
     } catch (executionError) {
       await createAlert({

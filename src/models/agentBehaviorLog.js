@@ -21,24 +21,20 @@ const AgentBehaviorLog = sequelize.define("AgentBehaviorLog", {
     defaultValue: 0.0,
   },
   
-  // ═══════════════════════════════════════════════════════════════════════════
-  // NEW: Blockchain Integration Field
-  // ═══════════════════════════════════════════════════════════════════════════
-  
   blockchain_tx_hash: {
-    type: DataTypes.STRING(66),
+    type: DataTypes.STRING,
     allowNull: true,
-    comment: "Avalanche TX hash for this action (if logged on-chain)",
+    comment: "Solana transaction signature for this action proof",
   },
   blockchain_action_id: {
-    type: DataTypes.INTEGER,
+    type: DataTypes.STRING,
     allowNull: true,
-    comment: "On-chain action ID from ERC-8004 contract",
+    comment: "On-chain action proof identifier",
   },
   blockchain_logged_at: {
     type: DataTypes.DATE,
     allowNull: true,
-    comment: "Timestamp when action was logged on Avalanche",
+    comment: "Timestamp when action was logged on Solana",
   },
 }, {
   timestamps: true,

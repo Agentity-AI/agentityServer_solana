@@ -21,11 +21,29 @@ const PaymentRecord = sequelize.define(
       type: DataTypes.UUID,
       allowNull: true,
     },
-    amount_hbar: {
-      type: DataTypes.DECIMAL(18, 8),
+    amount: {
+      type: DataTypes.DECIMAL(30, 9),
       allowNull: false,
     },
-    hedera_tx_id: {
+    amount_atomic: {
+      type: DataTypes.STRING,
+      allowNull: false,
+    },
+    currency: {
+      type: DataTypes.STRING,
+      allowNull: false,
+      defaultValue: "SOL",
+    },
+    token_mint: {
+      type: DataTypes.STRING,
+      allowNull: true,
+    },
+    token_decimals: {
+      type: DataTypes.INTEGER,
+      allowNull: false,
+      defaultValue: 9,
+    },
+    solana_signature: {
       type: DataTypes.STRING,
       allowNull: true,
     },
@@ -54,6 +72,8 @@ const PaymentRecord = sequelize.define(
       { fields: ["to_agent_id"] },
       { fields: ["task_execution_id"] },
       { fields: ["status"] },
+      { fields: ["currency"] },
+      { fields: ["solana_signature"] },
       { fields: ["created_at"] },
     ],
   }

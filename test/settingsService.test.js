@@ -9,8 +9,8 @@ const {
 const {
   ValidationError,
   requireEmail,
-  requireHederaAccountId,
   requirePassword,
+  requireSolanaAddress,
   requireUuid,
 } = require("../src/utils/validation");
 
@@ -67,7 +67,7 @@ test("validation helpers reject malformed auth and wallet input", () => {
   assert.throws(() => requirePassword("short"), ValidationError);
   assert.throws(() => requireUuid("1234", "agentId"), ValidationError);
   assert.throws(
-    () => requireHederaAccountId("hedera-testnet", "hederaAccountId"),
+    () => requireSolanaAddress("not-a-solana-address", "solanaAddress"),
     ValidationError,
   );
 });
@@ -80,7 +80,10 @@ test("validation helpers accept expected auth and wallet input", () => {
     "123e4567-e89b-42d3-a456-426614174000",
   );
   assert.equal(
-    requireHederaAccountId("0.0.8479610", "hederaAccountId"),
-    "0.0.8479610",
+    requireSolanaAddress(
+      "8uQhQMGm4qMVM9Mp2HcJqKqB7GMGS7gqKq2m2ZzC7C4u",
+      "solanaAddress",
+    ),
+    "8uQhQMGm4qMVM9Mp2HcJqKqB7GMGS7gqKq2m2ZzC7C4u",
   );
 });
