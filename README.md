@@ -10,11 +10,13 @@ The monorepo now contains:
 - `db/schema.sql` - PostgreSQL/Supabase schema.
 - `test/` - Node test suite for backend utilities and Solana runtime safety.
 
-Live backend:
+## Live Demo
 
-```text
-https://agentityserver-solana.onrender.com
-```
+**Frontend:** [https://agentity-server-solana-client.vercel.app/](https://agentity-server-solana-client.vercel.app/)
+
+**Backend:** [https://agentityserver-solana.onrender.com](https://agentityserver-solana.onrender.com)
+
+**API Documentation:** [https://agentityserver-solana.onrender.com/docs](https://agentityserver-solana.onrender.com/docs)
 
 Client default API target:
 
@@ -233,7 +235,7 @@ The React client uses:
 - Bearer JWT persistence from `/auth/register` and `/auth/login`.
 - Zustand actions for dashboard, agents, wallet linking, verification, simulations, transaction policies, alerts, and Solana status.
 
-The client defaults to the live backend:
+The client is deployed on Vercel and defaults to the live backend:
 
 ```text
 https://agentityserver-solana.onrender.com
@@ -329,7 +331,7 @@ Make sure the service binds to `process.env.PORT`, which is already handled by `
 
 ### Frontend
 
-For Vercel, Netlify, or Render static hosting:
+The frontend is deployed on Vercel. For Vercel, Netlify, or Render static hosting:
 
 ```bash
 npm install
@@ -350,7 +352,7 @@ VITE_API_BASE_URL=https://agentityserver-solana.onrender.com
 
 ## Hackathon Demo Script
 
-1. Open the deployed frontend.
+1. Open the deployed frontend at [https://agentity-server-solana-client.vercel.app/](https://agentity-server-solana-client.vercel.app/).
 2. Sign up or log in.
 3. Confirm the dashboard shows Solana runtime status.
 4. Register an agent with a Solana devnet public key.
