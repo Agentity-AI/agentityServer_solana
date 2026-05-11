@@ -3,10 +3,21 @@
   "version": "1.0.0",
   "description": "Solana-native trust, simulation, payment, and audit backend for AI agents",
   "main": "src/server.js",
+  "private": true,
+  "workspaces": [
+    "apps/client"
+  ],
   "scripts": {
     "dev": "nodemon src/server.js",
+    "dev:api": "nodemon src/server.js",
+    "dev:client": "npm --workspace @agentity/client run dev",
     "start": "node src/server.js",
     "test": "node --test",
+    "test:api": "node --test",
+    "test:client": "npm --workspace @agentity/client run lint && npm --workspace @agentity/client run build",
+    "test:all": "npm run test:api && npm run test:client",
+    "build:client": "npm --workspace @agentity/client run build",
+    "lint:client": "npm --workspace @agentity/client run lint",
     "smoke": "node scripts/smoke-backend.js",
     "cleanup:agent-reputations": "node scripts/cleanup-agent-reputations.js",
     "sandbox:build": "docker build -t agentity-sandbox ./src/sandbox",

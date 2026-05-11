@@ -6,7 +6,6 @@ const {
   getSolanaCommitment,
   getSolanaExplorerUrl,
   getSolanaRpcUrl,
-  hasOperatorPublicKey,
   hasOperatorSigner,
   loadOperatorKeypair,
 } = require("../../config/solana");
@@ -37,19 +36,58 @@ function isSolanaOperatorConfigured() {
   return hasOperatorSigner();
 }
 
+function readSolanaConfig(label, reader, fallback, errors) {
+  try {
+    return reader();
+  } catch (error) {
+    errors.push(`${label}: ${error.message}`);
+    return fallback;
+  }
+}
+
 function buildSolanaRuntimeStatus() {
+  const configErrors = [];
+  const cluster = readSolanaConfig("SOLANA_CLUSTER", getSolanaCluster, "devnet", configErrors);
+  const rpcUrl = readSolanaConfig("SOLANA_RPC_URL", getSolanaRpcUrl, null, configErrors);
+  const commitment = readSolanaConfig(
+    "SOLANA_COMMITMENT",
+    getSolanaCommitment,
+    "confirmed",
+    configErrors,
+  );
+  const operatorPublicKey = readSolanaConfig(
+    "SOLANA_OPERATOR_PUBLIC_KEY",
+    getOperatorPublicKey,
+    null,
+    configErrors,
+  );
+  const operatorCanSign = readSolanaConfig(
+    "SOLANA_OPERATOR_KEYPAIR",
+    isSolanaOperatorConfigured,
+    false,
+    configErrors,
+  );
+  const registryProgramId = readSolanaConfig(
+    "SOLANA_REGISTRY_PROGRAM_ID",
+    getRegistryProgramId,
+    null,
+    configErrors,
+  );
+
   return {
-    cluster: getSolanaCluster(),
-    rpcUrl: getSolanaRpcUrl(),
-    commitment: getSolanaCommitment(),
-    operatorPublicKey: getOperatorPublicKey(),
-    operatorConfigured: isSolanaOperatorConfigured(),
-    operatorHasPublicKey: hasOperatorPublicKey(),
-    operatorCanSign: hasOperatorSigner(),
+    status: configErrors.length > 0 ? "degraded" : "ready",
+    cluster,
+    rpcUrl,
+    commitment,
+    operatorPublicKey,
+    operatorConfigured: operatorCanSign,
+    operatorHasPublicKey: Boolean(operatorPublicKey),
+    operatorCanSign,
     realPaymentsEnabled: process.env.SOLANA_ENABLE_REAL_TRANSFERS === "true",
     realProofsEnabled: process.env.SOLANA_ENABLE_REAL_PROOFS !== "false",
-    registryProgramId: getRegistryProgramId(),
-    proofMode: getRegistryProgramId() ? "anchor-ready-memo" : "memo",
+    registryProgramId,
+    proofMode: registryProgramId ? "anchor-ready-memo" : "memo",
+    configErrors,
   };
 }
 
